@@ -127,23 +127,28 @@ function makePlat(x,y,type){
 }
 function altitudeOf(y){ return Math.max(0, Math.floor((groundY - y)/100)); }
 function genUpTo(topY){
-  var gapMax = Math.min(175, 145 + altitudeOf(p.y)*0.03);
+  var gapMax = Math.min(142, 122 + altitudeOf(p.y)*0.025);
   var slideP  = Math.min(.20, .06 + altitudeOf(p.y)*0.0003);
   while(plats.top > topY){
-    var gap = rnd(90, gapMax);
+    var gap = rnd(80, gapMax);
     var y = plats.top - gap;
-    // 每一层通常 2 颗, 偶尔 1 颗(同层间距拉大, 画面疏朗); 2 颗层能在踩空时接住你
-    var n = 1 + (Math.random()<.9 ? 1 : 0);
-    var used = [];
-    for(var k=0;k<n;k++){
-      var x, tries=0;
-      do { x = rnd(80, W-80); tries++; } while(tries<20 && used.some(function(u){ return Math.abs(u-x)<240; }));
-      used.push(x);
-      var t = Math.random() < slideP ? 'slide' : 'normal';
-      plats.list.push(makePlat(x, y, t));
+    // 主球: 沿"可达阶梯"放在上一层附近(±110), 逼近屏幕边缘则回弹 -> 始终在中央安全带内左右摆动, 不会漂到边缘后绕屏(那会让下一颗甩到对面接不到)
+    var lowB=150, hiB=650;
+    var dx = rnd(-110, 110);
+    var x1 = plats.lastX + dx;
+    if(x1 < lowB){ dx = Math.abs(dx); x1 = plats.lastX + dx; }
+    if(x1 > hiB){ dx = -Math.abs(dx); x1 = plats.lastX + dx; }
+    x1 = Math.max(lowB, Math.min(hiB, x1));
+    var t1 = Math.random() < slideP ? 'slide' : 'normal';
+    plats.list.push(makePlat(x1, y, t1));
+    plats.lastX = x1;
+    // 偶尔(约42%)多一颗, 散开摆放 -> "大部分一层一颗, 偶尔双球"; 这颗可当踩空时的接应
+    if(Math.random() < .42){
+      var x2, t2=0;
+      do { x2 = rnd(80, W-80); t2++; } while(t2<20 && Math.abs(x2-x1)<240);
+      plats.list.push(makePlat(x2, y, Math.random()<slideP?'slide':'normal'));
     }
     plats.top = y;
-    plats.lastX = used[0];
   }
 }
 // 平台顶端 y (玩家踩在球的顶端, 不是底端)
@@ -152,11 +157,11 @@ function platTop(q){
   if(q.type==='slide')  return q.y-platCoinH;   // 星币
   return q.y-platBallH;                          // 精灵球
 }
-// 水平命中半宽 (手动模式需稍宽容, 否则一偏就掉)
+// 水平命中半宽 (手动模式放宽, 擦边也能踩上; 稀疏球阵下更宽容)
 function platHalf(q){
-  if(q.type==='ground') return 230;
-  if(q.type==='slide')  return platCoinH/2+28;
-  return platBallH/2+30;
+  if(q.type==='ground') return W/2 + 80;   // 地面铺满全屏: 任何 x 落回都能接住, 不会从边缘漏下去
+  if(q.type==='slide')  return platCoinH/2+92;
+  return platBallH/2+95;
 }
 // 返回 y 上方(更小 y)最近、且未被吃掉的球/币
 function nearestAbove(y){
@@ -172,7 +177,7 @@ function nearestAbove(y){
 function scoreNow(){ return maxAlt + coinBonus; }
 function reset(){
   groundY = 1360; coinBonus = 0;
-  p = { x:W/2, y:groundY-PH/2-40, vy:-400, px:0 };
+  p = { x:W/2, y:groundY-PH/2-40, vy:-JUMP, px:0 };
   plats = { list:[], top:0, lastX:W/2 };
   plats.list.push({x:W/2, y:groundY, type:'ground', vx:0, r:250});
   plats.top = groundY;
@@ -203,9 +208,9 @@ function step(dt){
   // 手动控制: 不拖动 / 不按键时, 角色只在原地直上直下, 不会自动找下一颗球
   // horizontal
   if(targetX!==null){
-    p.x += (targetX-p.x)*Math.min(1, dt*16);
-  } else if(kbL){ p.x -= 760*dt; }
-  else if(kbR){ p.x += 760*dt; }
+    p.x += (targetX-p.x)*Math.min(1, dt*22);
+  } else if(kbL){ p.x -= 900*dt; }
+  else if(kbR){ p.x += 900*dt; }
   // wrap
   if(p.x > W+PW/2) p.x = -PW/2;
   if(p.x < -PW/2) p.x = W+PW/2;
@@ -221,7 +226,8 @@ function step(dt){
       var half = platHalf(q);
       if(Math.abs(p.x-q.x) > half) continue;
       var top = platTop(q);                        // 球的顶端
-      if(prevFeet <= top+8 && feet >= top-2){
+      // 向下穿越判定: 上一帧脚在球顶之上、这一帧落到球顶之下即算踩中(不受下落速度影响, 不会穿透)
+      if(prevFeet <= top + 2 && feet >= top){
         p.y = top - PH/2; p.vy = -JUMP; ding();
         if(q.type==='slide') coinBonus += 10;      // 踩到金币 +10m
         if(q.type!=='ground') q.gone = true;       // 球/币踩过即消失; 地面只作起跳台
