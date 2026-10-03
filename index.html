@@ -112,7 +112,7 @@ function ding(){
 }
 
 // ---------- game state ----------
-var G=2400, JUMP=1250, PW=112, PH=84;           // casual: fixed size + high jump
+var G=2400, JUMP=1200, PW=112, PH=84;           // casual: fixed size + hop ~300px (lands on next ball)
 var ST='start';                                  // start | play | pause | over
 var p, plats, camTop, maxAlt, best, groundY;
 var platBallH=74, platCoinH=64;
@@ -126,20 +126,34 @@ function makePlat(x,y,type){
 }
 function altitudeOf(y){ return Math.max(0, Math.floor((groundY - y)/100)); }
 function genUpTo(topY){
-  var gapMax = Math.min(280, 190 + altitudeOf(p.y)*0.06);
+  var gapMax = Math.min(235, 175 + altitudeOf(p.y)*0.04);
   var slideP  = Math.min(.34, .10 + altitudeOf(p.y)*0.0006);
-  while(plats.top < topY){
-    var gap = rnd(115, gapMax);
+  while(plats.top > topY){
+    var gap = rnd(110, gapMax);
     var y = plats.top - gap;
+    // 阶梯式: 下一颗球的 x 必须在上一颗的水平可达范围内, 保证能踩着往上爬
+    var dx = rnd(45, 185) * (Math.random()<.5?-1:1);
+    var nx = Math.max(70, Math.min(W-70, plats.lastX + dx));
     var t = Math.random() < slideP ? 'slide' : 'normal';
-    plats.list.push(makePlat(rnd(70, W-70), y, t));
+    var o = makePlat(nx, y, t);
+    plats.list.push(o);
     plats.top = y;
+    plats.lastX = nx;
   }
+}
+// 返回某颗球正上方最近的球 (踩到 q 后, 下一次要去的那颗)
+function nextAbove(q){
+  var best=null;
+  for(var i=0;i<plats.list.length;i++){
+    var o=plats.list[i];
+    if(o!==q && o.y < q.y){ if(best===null || o.y > best.y) best=o; }
+  }
+  return best;
 }
 function reset(){
   groundY = 1360;
-  p = { x:W/2, y:groundY-PH/2-40, vy:-400, px:0 };
-  plats = { list:[], top:0 };
+  p = { x:W/2, y:groundY-PH/2-40, vy:-400, px:0, aimPlat:null };
+  plats = { list:[], top:0, lastX:W/2 };
   plats.list.push({x:W/2, y:groundY, type:'ground', vx:0, r:250});
   plats.top = groundY;
   genUpTo(-900);
@@ -154,7 +168,7 @@ function toWorldX(clientX){
 }
 cv.addEventListener('pointerdown', function(e){ if(ST==='play'){ targetX=toWorldX(e.clientX); e.preventDefault(); }});
 cv.addEventListener('pointermove', function(e){ if(ST==='play' && targetX!==null){ targetX=toWorldX(e.clientX); e.preventDefault(); }});
-addEventListener('pointerup', function(){ targetX=null; });
+addEventListener('pointerup', function(){ targetX=null; if(p) p.aimPlat=null; });
 addEventListener('keydown', function(e){
   if(e.key==='ArrowLeft'||e.key==='a') kbL=true;
   if(e.key==='ArrowRight'||e.key==='d') kbR=true;
@@ -171,6 +185,11 @@ function step(dt){
     p.x += (targetX-p.x)*Math.min(1, dt*11);
   } else if(kbL){ p.x -= 660*dt; }
   else if(kbR){ p.x += 660*dt; }
+  else if(p.aimPlat){
+    // 无操作时: 朝目标球(含移动星)的实时 x 匀速移动, 整段滞空时间都能对准 -> 踩着球一颗一颗往上爬
+    var d = p.aimPlat.x - p.x, sp = 620;
+    p.x += Math.max(-sp*dt, Math.min(sp*dt, d));
+  }
   // wrap
   if(p.x > W+PW/2) p.x = -PW/2;
   if(p.x < -PW/2) p.x = W+PW/2;
@@ -185,7 +204,9 @@ function step(dt){
       var half = (q.type==='ground'? 250 : q.type==='slide'? platCoinH/2 : platBallH/2) + 14;
       if(Math.abs(p.x-q.x) > half) continue;
       if(prevFeet <= q.y+6 && feet >= q.y-2){
-        p.y = q.y - PH/2; p.vy = -JUMP; ding(); break;
+        p.y = q.y - PH/2; p.vy = -JUMP; ding();
+        p.aimPlat = nextAbove(q);   // 锁定下一颗要踩的球(每帧跟踪其实时x)
+        break;
       }
     }
   }
@@ -305,6 +326,9 @@ document.addEventListener('visibilitychange', function(){
 });
 ovStart.style.backgroundImage='url('+IMG_BG+')';
 refreshBest();
+// debug hook (harmless): expose state for automated verification
+window.__g = { alt:function(){ return maxAlt; }, y:function(){ return p?p.y:0; },
+  st:function(){ return ST; }, plats:function(){ return plats?plats.list.length:0; } };
 requestAnimationFrame(loop);
 }
 )();
