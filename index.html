@@ -129,24 +129,26 @@ function altitudeOf(y){ return Math.max(0, Math.floor((groundY - y)/100)); }
 function genUpTo(topY){
   var gapMax = Math.min(142, 122 + altitudeOf(p.y)*0.025);
   var slideP  = Math.min(.20, .06 + altitudeOf(p.y)*0.0003);
+  // 整体球量约为上一版(1主+42%双 ≈1.42/层)的一半: 每层约 71% 放一颗主球, 偶尔整层不放;
+  // 但绝不连续两空(否则三层跨度会超出一跳高度导致接不到), 且跳空后那颗用紧凑 gap 把总跨度收进一跳内
   while(plats.top > topY){
-    var gap = rnd(80, gapMax);
+    var willSkip = (!plats.skipArmed) && (plats.list.length >= 5) && (Math.random() < 0.41);
+    var gap = willSkip ? rnd(80, 112) : rnd(80, gapMax);
     var y = plats.top - gap;
-    // 主球: 沿"可达阶梯"放在上一层附近(±110), 逼近屏幕边缘则回弹 -> 始终在中央安全带内左右摆动, 不会漂到边缘后绕屏(那会让下一颗甩到对面接不到)
-    var lowB=150, hiB=650;
-    var dx = rnd(-110, 110);
-    var x1 = plats.lastX + dx;
-    if(x1 < lowB){ dx = Math.abs(dx); x1 = plats.lastX + dx; }
-    if(x1 > hiB){ dx = -Math.abs(dx); x1 = plats.lastX + dx; }
-    x1 = Math.max(lowB, Math.min(hiB, x1));
-    var t1 = Math.random() < slideP ? 'slide' : 'normal';
-    plats.list.push(makePlat(x1, y, t1));
-    plats.lastX = x1;
-    // 偶尔(约42%)多一颗, 散开摆放 -> "大部分一层一颗, 偶尔双球"; 这颗可当踩空时的接应
-    if(Math.random() < .42){
-      var x2, t2=0;
-      do { x2 = rnd(80, W-80); t2++; } while(t2<20 && Math.abs(x2-x1)<240);
-      plats.list.push(makePlat(x2, y, Math.random()<slideP?'slide':'normal'));
+    if(willSkip){
+      plats.skipArmed = true;             // 记一笔: 下一颗必须放、且把 gap 收到一跳范围内
+    } else {
+      // 主球: 沿"可达阶梯"放在上一层附近(±110), 逼近屏幕边缘则回弹 -> 始终在中央安全带内左右摆动
+      var lowB=150, hiB=650;
+      var dx = rnd(-110, 110);
+      var x1 = plats.lastX + dx;
+      if(x1 < lowB){ dx = Math.abs(dx); x1 = plats.lastX + dx; }
+      if(x1 > hiB){ dx = -Math.abs(dx); x1 = plats.lastX + dx; }
+      x1 = Math.max(lowB, Math.min(hiB, x1));
+      var t1 = Math.random() < slideP ? 'slide' : 'normal';
+      plats.list.push(makePlat(x1, y, t1));
+      plats.lastX = x1;
+      plats.skipArmed = false;
     }
     plats.top = y;
   }
@@ -178,7 +180,7 @@ function scoreNow(){ return maxAlt + coinBonus; }
 function reset(){
   groundY = 1360; coinBonus = 0;
   p = { x:W/2, y:groundY-PH/2-40, vy:-JUMP, px:0 };
-  plats = { list:[], top:0, lastX:W/2 };
+  plats = { list:[], top:0, lastX:W/2, skipArmed:false };
   plats.list.push({x:W/2, y:groundY, type:'ground', vx:0, r:250});
   plats.top = groundY;
   genUpTo(-900);
