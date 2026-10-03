@@ -48,7 +48,7 @@
     <img id="titleImg" alt="跳跳糖">
     <button id="btnStart" class="btn">开始游戏</button>
     <div id="bestStart" class="stat">最高纪录 <b id="bestVal">0</b> m</div>
-    <div class="hint">拖动 / ←→ 移动 · 踩着精灵球往上跳</div>
+    <div class="hint">拖动 / ←→ 移动，对准精灵球往上跳</div>
   </div>
 
   <div id="ovPause" class="ov hidden">
@@ -119,26 +119,31 @@ var platBallH=74, platCoinH=64;
 best = parseInt(localStorage.getItem('wm_best')||'0',10)||0;
 
 function rnd(a,b){ return a + Math.random()*(b-a); }
+var platSeq=0;
 function makePlat(x,y,type){
-  var o={x:x, y:y, type:type, vx:0, r:(type==='slide'?platCoinH:platBallH)/2};
-  if(type==='slide') o.vx = rnd(95,175) * (Math.random()<.5?-1:1);
+  var o={id:platSeq++, x:x, y:y, type:type, vx:0, r:(type==='slide'?platCoinH:platBallH)/2};
+  if(type==='slide') o.vx = rnd(35,80) * (Math.random()<.5?-1:1);
   return o;
 }
 function altitudeOf(y){ return Math.max(0, Math.floor((groundY - y)/100)); }
 function genUpTo(topY){
-  var gapMax = Math.min(235, 175 + altitudeOf(p.y)*0.04);
-  var slideP  = Math.min(.34, .10 + altitudeOf(p.y)*0.0006);
+  var gapMax = Math.min(175, 145 + altitudeOf(p.y)*0.03);
+  var slideP  = Math.min(.20, .06 + altitudeOf(p.y)*0.0003);
   while(plats.top > topY){
-    var gap = rnd(110, gapMax);
+    var gap = rnd(90, gapMax);
     var y = plats.top - gap;
-    // 阶梯式: 下一颗球的 x 必须在上一颗的水平可达范围内, 保证能踩着往上爬
-    var dx = rnd(45, 185) * (Math.random()<.5?-1:1);
-    var nx = Math.max(70, Math.min(W-70, plats.lastX + dx));
-    var t = Math.random() < slideP ? 'slide' : 'normal';
-    var o = makePlat(nx, y, t);
-    plats.list.push(o);
+    // 每一层放 2~3 颗球, 分布在不同 x -> 形成可踩的"球阵": 踩空一颗还有邻居接住(单路径太易摔死)
+    var n = 2 + (Math.random()<.4 ? 1 : 0);
+    var used = [];
+    for(var k=0;k<n;k++){
+      var x, tries=0;
+      do { x = rnd(80, W-80); tries++; } while(tries<20 && used.some(function(u){ return Math.abs(u-x)<150; }));
+      used.push(x);
+      var t = Math.random() < slideP ? 'slide' : 'normal';
+      plats.list.push(makePlat(x, y, t));
+    }
     plats.top = y;
-    plats.lastX = nx;
+    plats.lastX = used[0];
   }
 }
 // 平台顶端 y (玩家踩在球的顶端, 不是底端)
@@ -147,11 +152,11 @@ function platTop(q){
   if(q.type==='slide')  return q.y-platCoinH;   // 星币
   return q.y-platBallH;                          // 精灵球
 }
-// 水平命中半宽
+// 水平命中半宽 (手动模式需稍宽容, 否则一偏就掉)
 function platHalf(q){
   if(q.type==='ground') return 230;
-  if(q.type==='slide')  return platCoinH/2+14;
-  return platBallH/2+14;
+  if(q.type==='slide')  return platCoinH/2+28;
+  return platBallH/2+30;
 }
 // 返回 y 上方(更小 y)最近、且未被吃掉的球/币
 function nearestAbove(y){
@@ -167,7 +172,7 @@ function nearestAbove(y){
 function scoreNow(){ return maxAlt + coinBonus; }
 function reset(){
   groundY = 1360; coinBonus = 0;
-  p = { x:W/2, y:groundY-PH/2-40, vy:-400, px:0, aimPlat:null };
+  p = { x:W/2, y:groundY-PH/2-40, vy:-400, px:0 };
   plats = { list:[], top:0, lastX:W/2 };
   plats.list.push({x:W/2, y:groundY, type:'ground', vx:0, r:250});
   plats.top = groundY;
@@ -183,7 +188,7 @@ function toWorldX(clientX){
 }
 cv.addEventListener('pointerdown', function(e){ if(ST==='play'){ targetX=toWorldX(e.clientX); e.preventDefault(); }});
 cv.addEventListener('pointermove', function(e){ if(ST==='play' && targetX!==null){ targetX=toWorldX(e.clientX); e.preventDefault(); }});
-addEventListener('pointerup', function(){ targetX=null; if(p) p.aimPlat=null; });
+addEventListener('pointerup', function(){ targetX=null; });
 addEventListener('keydown', function(e){
   if(e.key==='ArrowLeft'||e.key==='a') kbL=true;
   if(e.key==='ArrowRight'||e.key==='d') kbR=true;
@@ -195,18 +200,12 @@ addEventListener('keyup', function(e){
 
 // ---------- physics ----------
 function step(dt){
-  // 无瞄准目标时, 自动锁定脚上方最近的球/币
-  if(p.aimPlat===null || p.aimPlat.gone) p.aimPlat = nearestAbove(p.y + PH/2);
+  // 手动控制: 不拖动 / 不按键时, 角色只在原地直上直下, 不会自动找下一颗球
   // horizontal
   if(targetX!==null){
-    p.x += (targetX-p.x)*Math.min(1, dt*11);
-  } else if(kbL){ p.x -= 660*dt; }
-  else if(kbR){ p.x += 660*dt; }
-  else if(p.aimPlat){
-    // 无操作时: 朝目标球(含移动星)的实时 x 匀速移动, 整段滞空时间都能对准 -> 踩着球一颗一颗往上爬
-    var d = p.aimPlat.x - p.x, sp = 620;
-    p.x += Math.max(-sp*dt, Math.min(sp*dt, d));
-  }
+    p.x += (targetX-p.x)*Math.min(1, dt*16);
+  } else if(kbL){ p.x -= 760*dt; }
+  else if(kbR){ p.x += 760*dt; }
   // wrap
   if(p.x > W+PW/2) p.x = -PW/2;
   if(p.x < -PW/2) p.x = W+PW/2;
@@ -226,7 +225,6 @@ function step(dt){
         p.y = top - PH/2; p.vy = -JUMP; ding();
         if(q.type==='slide') coinBonus += 10;      // 踩到金币 +10m
         if(q.type!=='ground') q.gone = true;       // 球/币踩过即消失; 地面只作起跳台
-        p.aimPlat = nearestAbove(q.y);             // 锁定下一颗要踩的球/币(每帧跟踪其实时x)
         break;
       }
     }
@@ -350,6 +348,11 @@ refreshBest();
 window.__g = { alt:function(){ return maxAlt; }, y:function(){ return p?p.y:0; },
   st:function(){ return ST; }, plats:function(){ return plats?plats.list.length:0; },
   coin:function(){ return coinBonus; }, score:function(){ return scoreNow(); },
+  nextX:function(){ var n=nearestAbove(p.y+PH/2); return n? n.x : null; },
+  x:function(){ return p? p.x : 0; },
+  feet:function(){ return p? p.y+PH/2 : 0; },
+  vy:function(){ return p? p.vy : 0; },
+  platsRaw:function(){ if(!plats) return []; return plats.list.map(function(o){ return {id:o.id, x:o.x, y:o.y, gone:!!o.gone, type:o.type}; }); },
   gone:function(){ var n=0; for(var i=0;i<plats.list.length;i++) if(plats.list[i].gone) n++; return n; },
   geom:function(){ var q={type:'normal', y:500}; return { top: platTop(q), bottom:q.y, ph:PH }; } };
 requestAnimationFrame(loop);
