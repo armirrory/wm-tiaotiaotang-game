@@ -127,13 +127,13 @@ function makePlat(x,y,type){
 }
 function altitudeOf(y){ return Math.max(0, Math.floor((groundY - y)/100)); }
 function genUpTo(topY){
-  var gapMax = Math.min(142, 122 + altitudeOf(p.y)*0.025);
+  var gapMax = Math.min(158, 138 + altitudeOf(p.y)*0.025);
   var slideP  = Math.min(.20, .06 + altitudeOf(p.y)*0.0003);
   // 整体球量约为上一版(1主+42%双 ≈1.42/层)的一半: 每层约 71% 放一颗主球, 偶尔整层不放;
   // 但绝不连续两空(否则三层跨度会超出一跳高度导致接不到), 且跳空后那颗用紧凑 gap 把总跨度收进一跳内
   while(plats.top > topY){
     var willSkip = (!plats.skipArmed) && (plats.list.length >= 5) && (Math.random() < 0.41);
-    var gap = willSkip ? rnd(80, 112) : rnd(80, gapMax);
+    var gap = willSkip ? rnd(80, 105) : rnd(95, gapMax);
     var y = plats.top - gap;
     if(willSkip){
       plats.skipArmed = true;             // 记一笔: 下一颗必须放、且把 gap 收到一跳范围内
