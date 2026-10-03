@@ -132,12 +132,12 @@ function genUpTo(topY){
   while(plats.top > topY){
     var gap = rnd(90, gapMax);
     var y = plats.top - gap;
-    // 每一层放 2~3 颗球, 分布在不同 x -> 形成可踩的"球阵": 踩空一颗还有邻居接住(单路径太易摔死)
-    var n = 2 + (Math.random()<.4 ? 1 : 0);
+    // 每一层通常 2 颗, 偶尔 1 颗(同层间距拉大, 画面疏朗); 2 颗层能在踩空时接住你
+    var n = 1 + (Math.random()<.9 ? 1 : 0);
     var used = [];
     for(var k=0;k<n;k++){
       var x, tries=0;
-      do { x = rnd(80, W-80); tries++; } while(tries<20 && used.some(function(u){ return Math.abs(u-x)<150; }));
+      do { x = rnd(80, W-80); tries++; } while(tries<20 && used.some(function(u){ return Math.abs(u-x)<240; }));
       used.push(x);
       var t = Math.random() < slideP ? 'slide' : 'normal';
       plats.list.push(makePlat(x, y, t));
