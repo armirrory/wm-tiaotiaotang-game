@@ -153,17 +153,26 @@ function genUpTo(topY){
     plats.top = y;
   }
 }
-// 平台顶端 y (玩家踩在球的顶端, 不是底端)
+// 平台顶端 y (方框顶边, 仅供调试/兜底; 实际踩踏用 landTop 的形象轮廓弧顶)
 function platTop(q){
   if(q.type==='ground') return q.y-26;          // 地面: roundRect 顶部
   if(q.type==='slide')  return q.y-platCoinH;   // 星币
   return q.y-platBallH;                          // 精灵球
 }
-// 水平命中半宽 (手动模式放宽, 擦边也能踩上; 稀疏球阵下更宽容)
+// 踩踏支撑高度: 按"形象轮廓"(圆形)取, 不按方形 PNG 外框 —— 圆弧高度随踩点 x 变化:
+// 踩正中 = 视觉圆顶, 踩边缘 = 弧线较低处; 半径外的擦边区落到圆心高度(球侧缘)
+function landTop(q, px){
+  if(q.type==='ground') return q.y-26;
+  var R  = q.type==='slide' ? platCoinH/2 : platBallH/2;   // 视觉半径 (星币64px/精灵球74px 直径)
+  var cy = q.y - R;                                         // 圆心
+  var dx = Math.min(Math.abs(px - q.x), R);
+  return cy - Math.sqrt(R*R - dx*dx);
+}
+// 水平命中半宽 = 形象轮廓半径 + 少量擦边宽容 (不再提供方框外的隐形平台)
 function platHalf(q){
   if(q.type==='ground') return W/2 + 80;   // 地面铺满全屏: 任何 x 落回都能接住, 不会从边缘漏下去
-  if(q.type==='slide')  return platCoinH/2+92;
-  return platBallH/2+95;
+  if(q.type==='slide')  return platCoinH/2+18;
+  return platBallH/2+18;
 }
 // 返回 y 上方(更小 y)最近、且未被吃掉的球/币
 function nearestAbove(y){
@@ -227,7 +236,7 @@ function step(dt){
       if(q.gone) continue;                         // 已踩掉的球/币不再碰撞
       var half = platHalf(q);
       if(Math.abs(p.x-q.x) > half) continue;
-      var top = platTop(q);                        // 球的顶端
+      var top = landTop(q, p.x);                   // 形象轮廓(圆弧)上的支撑高度, 随踩点 x 变化
       // 向下穿越判定: 上一帧脚在球顶之上、这一帧落到球顶之下即算踩中(不受下落速度影响, 不会穿透)
       if(prevFeet <= top + 2 && feet >= top){
         p.y = top - PH/2; p.vy = -JUMP; ding();
@@ -278,7 +287,8 @@ function draw(){
     }
   }
   // player
-  ctx.drawImage(imgPlayer, p.x-PW/2, p.y-PH/2, PW, PH);
+  // 以皮卡丘形象中心为基准绘制 (源图左侧25%透明留白, 形象中心在源图62.6%处) —— 判定中心 = 视觉中心
+  ctx.drawImage(imgPlayer, p.x-PW*0.626, p.y-PH/2, PW, PH);
   ctx.restore();
   // HUD score
   ctx.font='900 46px system-ui,sans-serif'; ctx.textAlign='center';
@@ -362,7 +372,7 @@ window.__g = { alt:function(){ return maxAlt; }, y:function(){ return p?p.y:0; }
   vy:function(){ return p? p.vy : 0; },
   platsRaw:function(){ if(!plats) return []; return plats.list.map(function(o){ return {id:o.id, x:o.x, y:o.y, gone:!!o.gone, type:o.type}; }); },
   gone:function(){ var n=0; for(var i=0;i<plats.list.length;i++) if(plats.list[i].gone) n++; return n; },
-  geom:function(){ var q={type:'normal', y:500}; return { top: platTop(q), bottom:q.y, ph:PH }; } };
+  geom:function(){ var q={type:'normal', x:0, y:500}; return { top: landTop(q,q.x), bottom:q.y, ph:PH }; } };
 requestAnimationFrame(loop);
 }
 )();
