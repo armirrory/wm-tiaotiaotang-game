@@ -114,7 +114,7 @@ function ding(){
 // ---------- game state ----------
 var G=2400, JUMP=1200, PW=112, PH=84;           // casual: fixed size + hop ~300px (lands on next ball)
 var ST='start';                                  // start | play | pause | over
-var p, plats, camTop, maxAlt, best, groundY;
+var p, plats, camTop, maxAlt, best, groundY, coinBonus;
 var platBallH=74, platCoinH=64;
 best = parseInt(localStorage.getItem('wm_best')||'0',10)||0;
 
@@ -141,17 +141,32 @@ function genUpTo(topY){
     plats.lastX = nx;
   }
 }
-// 返回某颗球正上方最近的球 (踩到 q 后, 下一次要去的那颗)
-function nextAbove(q){
+// 平台顶端 y (玩家踩在球的顶端, 不是底端)
+function platTop(q){
+  if(q.type==='ground') return q.y-26;          // 地面: roundRect 顶部
+  if(q.type==='slide')  return q.y-platCoinH;   // 星币
+  return q.y-platBallH;                          // 精灵球
+}
+// 水平命中半宽
+function platHalf(q){
+  if(q.type==='ground') return 230;
+  if(q.type==='slide')  return platCoinH/2+14;
+  return platBallH/2+14;
+}
+// 返回 y 上方(更小 y)最近、且未被吃掉的球/币
+function nearestAbove(y){
   var best=null;
   for(var i=0;i<plats.list.length;i++){
     var o=plats.list[i];
-    if(o!==q && o.y < q.y){ if(best===null || o.y > best.y) best=o; }
+    if(o.gone) continue;
+    if(o.y < y){ if(best===null || o.y > best.y) best=o; }
   }
   return best;
 }
+// 成绩 = 高度 + 金币奖励
+function scoreNow(){ return maxAlt + coinBonus; }
 function reset(){
-  groundY = 1360;
+  groundY = 1360; coinBonus = 0;
   p = { x:W/2, y:groundY-PH/2-40, vy:-400, px:0, aimPlat:null };
   plats = { list:[], top:0, lastX:W/2 };
   plats.list.push({x:W/2, y:groundY, type:'ground', vx:0, r:250});
@@ -180,6 +195,8 @@ addEventListener('keyup', function(e){
 
 // ---------- physics ----------
 function step(dt){
+  // 无瞄准目标时, 自动锁定脚上方最近的球/币
+  if(p.aimPlat===null || p.aimPlat.gone) p.aimPlat = nearestAbove(p.y + PH/2);
   // horizontal
   if(targetX!==null){
     p.x += (targetX-p.x)*Math.min(1, dt*11);
@@ -201,11 +218,15 @@ function step(dt){
   if(p.vy > 0){
     for(var i=0;i<plats.list.length;i++){
       var q=plats.list[i];
-      var half = (q.type==='ground'? 250 : q.type==='slide'? platCoinH/2 : platBallH/2) + 14;
+      if(q.gone) continue;                         // 已踩掉的球/币不再碰撞
+      var half = platHalf(q);
       if(Math.abs(p.x-q.x) > half) continue;
-      if(prevFeet <= q.y+6 && feet >= q.y-2){
-        p.y = q.y - PH/2; p.vy = -JUMP; ding();
-        p.aimPlat = nextAbove(q);   // 锁定下一颗要踩的球(每帧跟踪其实时x)
+      var top = platTop(q);                        // 球的顶端
+      if(prevFeet <= top+8 && feet >= top-2){
+        p.y = top - PH/2; p.vy = -JUMP; ding();
+        if(q.type==='slide') coinBonus += 10;      // 踩到金币 +10m
+        if(q.type!=='ground') q.gone = true;       // 球/币踩过即消失; 地面只作起跳台
+        p.aimPlat = nearestAbove(q.y);             // 锁定下一颗要踩的球/币(每帧跟踪其实时x)
         break;
       }
     }
@@ -213,6 +234,7 @@ function step(dt){
   // slide platforms
   for(var j=0;j<plats.list.length;j++){
     var s=plats.list[j];
+    if(s.gone) continue;
     if(s.type==='slide'){
       s.x += s.vx*dt;
       if(s.x < 70){ s.x=70; s.vx=Math.abs(s.vx); }
@@ -233,16 +255,13 @@ function step(dt){
 
 // ---------- render ----------
 function draw(){
-  // parallax background (two stacked tiles, scrolls at 22% of camera speed)
-  if(imgBg.complete){
-    var py = ((-camTop*0.22) % H + H) % H;
-    ctx.drawImage(imgBg, 0, py - H, W, H);
-    ctx.drawImage(imgBg, 0, py, W, H);
-  }
+  // 背景固定, 不随镜头滚动 (避免边界穿帮)
+  if(imgBg.complete){ ctx.drawImage(imgBg, 0, 0, W, H); }
   ctx.save(); ctx.translate(0, -camTop);
   // platforms
   for(var i=0;i<plats.list.length;i++){
     var q=plats.list[i];
+    if(q.gone) continue;                          // 已踩掉的不再绘制
     if(q.type==='ground'){
       ctx.fillStyle='#ffd633'; ctx.strokeStyle='#3a3a3a'; ctx.lineWidth=6;
       roundRect(q.x-250, q.y-26, 500, 44, 22); ctx.fill(); ctx.stroke();
@@ -258,7 +277,7 @@ function draw(){
   // HUD score
   ctx.font='900 46px system-ui,sans-serif'; ctx.textAlign='center';
   ctx.lineWidth=8; ctx.strokeStyle='rgba(255,255,255,.95)'; ctx.fillStyle='#333';
-  var txt = maxAlt + ' m';
+  var txt = scoreNow() + ' m';
   ctx.strokeText(txt, W/2, 92); ctx.fillText(txt, W/2, 92);
 }
 function roundRect(x,y,w,h,r){
@@ -290,8 +309,9 @@ function startGame(){
 }
 function gameOver(){
   ST='over'; hud.style.display='none'; targetX=null; bgm.pause();
-  if(maxAlt>best){ best=maxAlt; localStorage.setItem('wm_best',best); }
-  document.getElementById('scoreVal').textContent=maxAlt; refreshBest();
+  var sc = scoreNow();
+  if(sc>best){ best=sc; localStorage.setItem('wm_best',best); }
+  document.getElementById('scoreVal').textContent=sc; refreshBest();
   show(ovOver,true);
   var ov=document.getElementById('ovOver');
   ov.style.backgroundImage='url('+IMG_BG+')';
@@ -328,7 +348,10 @@ ovStart.style.backgroundImage='url('+IMG_BG+')';
 refreshBest();
 // debug hook (harmless): expose state for automated verification
 window.__g = { alt:function(){ return maxAlt; }, y:function(){ return p?p.y:0; },
-  st:function(){ return ST; }, plats:function(){ return plats?plats.list.length:0; } };
+  st:function(){ return ST; }, plats:function(){ return plats?plats.list.length:0; },
+  coin:function(){ return coinBonus; }, score:function(){ return scoreNow(); },
+  gone:function(){ var n=0; for(var i=0;i<plats.list.length;i++) if(plats.list[i].gone) n++; return n; },
+  geom:function(){ var q={type:'normal', y:500}; return { top: platTop(q), bottom:q.y, ph:PH }; } };
 requestAnimationFrame(loop);
 }
 )();
